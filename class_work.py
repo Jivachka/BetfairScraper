@@ -1,60 +1,210 @@
+import logging
+import random
 import time
 from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.chrome.options import Options
 
-# Инициализация драйвера. Убедитесь, что у вас установлен chromedriver и он доступен по пути ниже.
-driver = webdriver.Chrome(executable_path='chromedriver.exe')
-odds_all = 'label.Zs3u5.AUP11.Qe-26[ng-if="!$ctrl.isSp"]'
+# Logger class
+class Logger:
+    def __init__(self):
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+        self.logger = logging.getLogger(__name__)
 
-# Переходим на сайт
-url = "https://www.betfair.com/exchange/plus/football/market/1.216829196"
-driver.get(url)
+    def log_info(self, message):
+        self.logger.info(message)
 
-# Устанавливаем явное ожидание
-wait = WebDriverWait(driver, 10)  # увеличено до 20 секунд
+    def log_error(self, message):
+        self.logger.error(message)
 
-# Принимаем куки
-try:
-    cookie_button = wait.until(EC.visibility_of_element_located((By.ID, "onetrust-accept-btn-handler")))
-    cookie_button.click()
-except:
-    print("Cookie button not found")
+# Random sleep functionality
+class RandomSleeper:
+    def sleep_randomly(self, min_seconds=1, max_seconds=3):
+        sleep_time = random.uniform(min_seconds, max_seconds)
+        time.sleep(sleep_time)
 
-# Ожидаем появления интересующих элементов
-element = wait.until(EC.presence_of_element_located((
-    By.CSS_SELECTOR,
-    "span.total-matched[ng-bind='ctrl.data.marketMatched.totalMatched']"
-    )))
-element_home_back = wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, odds_all)))
+# Web browser management
+class WebDriverManager:
+    def __init__(self, driver_path, headless=False):
+        self.logger = Logger()
+        self.sleeper = RandomSleeper()
+        chrome_options = Options()
+        if headless:
+            chrome_options.add_argument("--headless")
+        else:
+            chrome_options.add_argument("--start-maximized")  # Открывает браузер в полноэкранном режиме
+            
+        try:
+            self.driver = webdriver.Chrome(driver_path, options=chrome_options)
+            self.logger.log_info("WebDriver успешно инициализирован.")
+        except Exception as e:
+            self.logger.log_error(f"Ошибка при инициализации WebDriver: {e}")
 
-print(element.text)
-list_odds = []
-for i in element_home_back:
-    list_odds.append(i.text)
+    def open_page(self, url):
+            try:
+                self.driver.get(url)
+                self.sleeper.sleep_randomly()
+                self.handle_cookies_popup()  # Обработка всплывающего окна с куками
+                self.sleeper.sleep_randomly()
+                self.logger.log_info(f"Страница {url} успешно открыта.")
+            except Exception as e:
+                self.logger.log_error(f"Ошибка при открытии страницы {url}: {e}")
 
-print(list_odds[2])
+    def handle_cookies_popup(self):
+            try:
+                # Ждем и нажимаем на кнопку для настройки куков
+#                 settings_button = WebDriverWait(self.driver, 10).until(
+#                     EC.element_to_be_clickable((By.ID, 'onetrust-pc-btn-handler')) #id="onetrust-pc-btn-handler"
+#                 )
+                settings_button = WebDriverWait(self.driver, 20).until(
+                    EC.element_to_be_clickable((By.ID, 'onetrust-pc-btn-handler'))
+                )
+                self.driver.execute_script("arguments[0].scrollIntoView(true);", settings_button)
 
-# Находим кнопку по её селектору и кликаем по ней
-try:
-    goals_button = driver.find_element_by_css_selector('a.tab-heading h4.tab-label[title="Голы"]')
-    goals_button.click()
-except:
-    print("Goals button not found")
+                settings_button.click()
 
-def wait_for_dom(driver):
-    return driver.execute_script("return document.readyState === 'complete';")
+                # Ждем, пока прогрузится следующее окно
+                self.sleeper.sleep_randomly()
+
+                # Ждем и нажимаем на кнопку для отказа от всех куков
+                refuse_all_button = WebDriverWait(self.driver, 20).until(
+                    EC.element_to_be_clickable((By.CLASS_NAME, 'ot-pc-refuse-all-handler'))
+                )
+                refuse_all_button.click()
+
+                # Ждем, чтобы убедиться, что всплывающее окно закрылось
+                self.sleeper.sleep_randomly()
+                self.logger.log_info("Все куки были успешно отклонены.")
+            except Exception as e:
+                self.logger.log_error(f"Ошибка при обработке всплывающего окна с куками: {e}")
+        
+    def click_selected_option(self):
+        try:
+            selected_option_button = WebDriverWait(self.driver, 10).until(
+                EC.element_to_be_clickable((By.CLASS_NAME, 'selected-option'))
+            )
+            selected_option_button.click()
+            self.logger.log_info("Кнопка 'selected-option' была нажата.")
+        except Exception as e:
+            self.logger.log_error(f"Ошибка при нажатии на кнопку 'selected-option': {e}")
+
+    def select_matched_amount_option(self):
+        try:
+            option_list = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_all_elements_located((By.CLASS_NAME, 'option-list-item'))
+            )
+            for option in option_list:
+                if option.text == "Matched Amount":
+                    option.click()
+                    self.logger.log_info("Опция 'Matched Amount' выбрана.")
+                    break
+        except Exception as e:
+            self.logger.log_error(f"Ошибка при выборе опции 'Matched Amount': {e}")
+            
+    def extract_mod_links_data(self):
+        data_list = []
+        try:
+            coupon_table = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.CLASS_NAME, 'coupon-table'))
+            )
+            mod_links = coupon_table.find_elements(By.CLASS_NAME, 'mod-link')
+            
+            for link in mod_links:
+                data = {
+                    'data-market-id': link.get_attribute('data-market-id'),
+                    'href': link.get_attribute('href'),
+                    'data-event-or-meeting-id': link.get_attribute('data-event-or-meeting-id'),
+                    'data-competition-or-venue-name': link.get_attribute('data-competition-or-venue-name'),
+                    'data-event-or-meeting-name': link.get_attribute('data-event-or-meeting-name'),
+                    'matched-amount-value': None
+                }
+                
+                # Обработка 'matched-amount-value'
+                matched_amount_elements = link.find_elements(By.CLASS_NAME, 'matched-amount-value')
+                if matched_amount_elements:
+                    matched_amount_value = matched_amount_elements[0].text.strip()
+                    processed_value = self.process_matched_amount_value(matched_amount_value)
+                    data['matched-amount-value'] = processed_value
+                else:
+                    data['matched-amount-value'] = None
+
+                data_list.append(data)
+
+            self.logger.log_info("Данные с элементов 'mod-link' успешно извлечены.")
+            return data_list
+        except Exception as e:
+            self.logger.log_error(f"Ошибка при извлечении данных с элементов 'mod-link': {e}")
+            return data_list
+        
+    def process_matched_amount_value(self, value):
+        if value and value[0] == '€':
+            value = value[1:]  # Удаление символа евро
+        value = value.replace(',', '')  # Удаление запятых
+        try:
+            return float(value)  # Преобразование в число с плавающей точкой
+        except ValueError:
+            return None  # В случае ошибки преобразования возвращаем None
+
+    def open_new_tab(self, url):
+        try:
+            self.driver.execute_script(f"window.open('{url}');")
+            self.driver.switch_to.window(self.driver.window_handles[-1])
+            self.sleeper.sleep_randomly()
+            self.logger.log_info(f"Новая вкладка с {url} открыта.")
+        except Exception as e:
+            self.logger.log_error(f"Ошибка при открытии новой вкладки: {e}")
+
+    def close_current_tab(self):
+        try:
+            if len(self.driver.window_handles) > 1:
+                self.driver.close()
+                self.driver.switch_to.window(self.driver.window_handles[-1])
+                self.sleeper.sleep_randomly()
+                self.logger.log_info("Текущая вкладка закрыта.")
+            else:
+                self.logger.log_info("Закрытие последней вкладки. Оставляю браузер открытым.")
+        except Exception as e:
+            self.logger.log_error(f"Ошибка при закрытии вкладки: {e}")
+
+    def switch_to_tab(self, index):
+        try:
+            self.driver.switch_to.window(self.driver.window_handles[index])
+            self.sleeper.sleep_randomly()
+            self.logger.log_info(f"Переключение на вкладку с индексом {index}.")
+        except Exception as e:
+            self.logger.log_error(f"Ошибка при переключении на вкладку: {e}")
+
+    def close_browser(self):
+        try:
+            self.driver.quit()
+            self.logger.log_info("WebDriver закрыт.")
+        except Exception as e:
+            self.logger.log_error(f"Ошибка при закрытии WebDriver: {e}")
+            
+    def wait_for_page_load(self, timeout=30):
+        WebDriverWait(self.driver, timeout).until(
+            lambda driver: self.driver.execute_script('return document.readyState') == 'complete'
+        )
+        self.logger.log_info("Страница полностью загружена.")
 
 
-try:
-    wait.until(wait_for_dom)
-    time.sleep(2)
-    res = wait.until(EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'label[ng-if="!$ctrl.isSp"].Zs3u5.AUP11.Qe-26')))
-    for i in res:
-        print(i.text)
-except:
-    print("Updated odds not found")
+# Пример использования
+web_driver_manager = WebDriverManager('chromedriver.exe')
+web_driver_manager.open_page('https://www.betfair.com/exchange/plus/en/football-betting-1/inplay')
 
-# Закрываем браузер
-# driver.quit()
+web_driver_manager.click_selected_option()
+web_driver_manager.select_matched_amount_option()
+
+web_driver_manager.wait_for_page_load()  # Дождаться полной загрузки страниц
+data_list = web_driver_manager.extract_mod_links_data()
+for data in data_list:
+    print(data)
+    
+# web_driver_manager.open_new_tab('https://www.google.com')
+# web_driver_manager.switch_to_tab(0)
+# web_driver_manager.close_current_tab()
+# web_driver_manager.open_new_tab('https://www.betfair.com/exchange/plus/en/football-betting-1/inplay')
+# web_driver_manager.switch_to_tab(0)
+# web_driver_manager.close_current_tab()
+
+time.sleep(5)
+web_driver_manager.close_browser()
