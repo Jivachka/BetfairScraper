@@ -4,6 +4,8 @@ import time
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 
+HENDLESS=False
+
 # Logger class
 class Logger:
     def __init__(self):
@@ -24,12 +26,13 @@ class RandomSleeper:
 
 # Web browser management
 class WebDriverManager:
-    def __init__(self, driver_path, headless=False):
+    def __init__(self, driver_path, headless=HENDLESS):
         self.logger = Logger()
         self.sleeper = RandomSleeper()
         chrome_options = Options()
         if headless:
             chrome_options.add_argument("--headless")
+            chrome_options.add_argument("--window-size=1920,1080")  # Пример размера окна
         else:
             chrome_options.add_argument("--start-maximized")  # Открывает браузер в полноэкранном режиме
             
@@ -55,7 +58,7 @@ class WebDriverManager:
 #                 settings_button = WebDriverWait(self.driver, 10).until(
 #                     EC.element_to_be_clickable((By.ID, 'onetrust-pc-btn-handler')) #id="onetrust-pc-btn-handler"
 #                 )
-                settings_button = WebDriverWait(self.driver, 20).until(
+                settings_button = WebDriverWait(self.driver, 30).until(
                     EC.element_to_be_clickable((By.ID, 'onetrust-pc-btn-handler'))
                 )
                 self.driver.execute_script("arguments[0].scrollIntoView(true);", settings_button)
@@ -66,7 +69,7 @@ class WebDriverManager:
                 self.sleeper.sleep_randomly()
 
                 # Ждем и нажимаем на кнопку для отказа от всех куков
-                refuse_all_button = WebDriverWait(self.driver, 20).until(
+                refuse_all_button = WebDriverWait(self.driver, 30).until(
                     EC.element_to_be_clickable((By.CLASS_NAME, 'ot-pc-refuse-all-handler'))
                 )
                 refuse_all_button.click()
@@ -79,7 +82,7 @@ class WebDriverManager:
         
     def click_selected_option(self):
         try:
-            selected_option_button = WebDriverWait(self.driver, 10).until(
+            selected_option_button = WebDriverWait(self.driver, 30).until(
                 EC.element_to_be_clickable((By.CLASS_NAME, 'selected-option'))
             )
             selected_option_button.click()
@@ -103,7 +106,7 @@ class WebDriverManager:
     def extract_mod_links_data(self):
         data_list = []
         try:
-            coupon_table = WebDriverWait(self.driver, 10).until(
+            coupon_table = WebDriverWait(self.driver, 30).until(
                 EC.presence_of_element_located((By.CLASS_NAME, 'coupon-table'))
             )
             mod_links = coupon_table.find_elements(By.CLASS_NAME, 'mod-link')
@@ -185,26 +188,35 @@ class WebDriverManager:
             lambda driver: self.driver.execute_script('return document.readyState') == 'complete'
         )
         self.logger.log_info("Страница полностью загружена.")
+    
+    def filter_and_display_data(self, data_list):
+        try:
+            # Извлечение значений matched-amount-value и исключение None значений
+            valid_values = [d['matched-amount-value'] for d in data_list if d['matched-amount-value'] is not None]
 
+            # Проверка на наличие валидных значений
+            if not valid_values:
+                self.logger.log_info("Нет валидных данных для анализа.")
+                return
+
+            # Вычисление среднего значения
+            average_value = sum(valid_values) / len(valid_values)
+            self.logger.log_info(f"Среднее значение matched-amount-value: {average_value}")
+
+            # Вывод значений больше среднего
+            for item in data_list:
+                if item['matched-amount-value'] and item['matched-amount-value'] > average_value:
+                    print(f'{item["matched-amount-value"]} - {item["data-competition-or-venue-name"]}')
+        except Exception as e:
+            self.logger.log_error(f"Ошибка в filter_and_display_data: {e}")
 
 # Пример использования
 web_driver_manager = WebDriverManager('chromedriver.exe')
 web_driver_manager.open_page('https://www.betfair.com/exchange/plus/en/football-betting-1/inplay')
-
 web_driver_manager.click_selected_option()
 web_driver_manager.select_matched_amount_option()
-
-web_driver_manager.wait_for_page_load()  # Дождаться полной загрузки страниц
+web_driver_manager.wait_for_page_load()
 data_list = web_driver_manager.extract_mod_links_data()
-for data in data_list:
-    print(data)
-    
-# web_driver_manager.open_new_tab('https://www.google.com')
-# web_driver_manager.switch_to_tab(0)
-# web_driver_manager.close_current_tab()
-# web_driver_manager.open_new_tab('https://www.betfair.com/exchange/plus/en/football-betting-1/inplay')
-# web_driver_manager.switch_to_tab(0)
-# web_driver_manager.close_current_tab()
-
+web_driver_manager.filter_and_display_data(data_list)
 time.sleep(5)
 web_driver_manager.close_browser()
